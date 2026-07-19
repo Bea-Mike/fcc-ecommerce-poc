@@ -22,4 +22,19 @@ for VM_NAME in "${VMS_TO_DELETE[@]}"; do
     fi
 done
 
+echo "Waiting for virtual network interfaces to release..."
+sleep 3
+
+echo "Cleaning up isolated cloud networks..."
+DB_VNET_NAME="db-net"
+
+# Check if the isolated network exists, and delete it cleanly
+if onevnet list --no-header | grep -q "$DB_VNET_NAME"; then
+    echo "Deleting OpenNebula network '${DB_VNET_NAME}'..."
+    onevnet delete "$DB_VNET_NAME"
+    echo "[Success] Network '${DB_VNET_NAME}' completely removed."
+else
+    echo "Network '${DB_VNET_NAME}' not found or already deleted. Skipping."
+fi
+
 echo " Teardown Complete! The slate is clean."
