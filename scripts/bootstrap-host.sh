@@ -26,7 +26,6 @@ else
 fi
 
 echo "Configuring Isolated Database Network Bridge..."
-# Only create the bridge if it doesn't already exist
 if ! ip link show dev onebr-db &>/dev/null; then
     echo "Creating virtual bridge 'onebr-db'..."
     sudo ip link add name onebr-db type bridge
@@ -38,18 +37,28 @@ else
 fi
 
 echo "Enforcing Linux Kernel IP Forwarding..."
-# Enable routing dynamically
 sudo sysctl -w net.ipv4.ip_forward=1
-# Make routing persistent across system reboots
 echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-cloud-routing.conf > /dev/null
 
 echo "Configuring Conditional NAT Firewall Rules..."
-# Only add the conditional NAT rule if it doesn't already exist in the iptables chain
 if ! sudo iptables -t nat -C POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE &>/dev/null; then
     echo "Applying conditional internet masquerading for the database zone..."
     sudo iptables -t nat -A POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE
 else
     echo "[Info] Conditional NAT rule already present."
 fi
+
+echo "Preventing MiniONE from hiding K8s node identities..."
+# Clean old instances to keep the rules clean and idempotent
+sudo iptables -t nat -D POSTROUTING -s 172.16.100.0/24 -d 172.16.20.0/24 -j RETURN 2>/dev/null || true
+sudo iptables -t nat -D POSTROUTING -s 172.16.20.0/24 -d 172.16.100.0/24 -j RETURN 2>/dev/null || true
+sudo iptables -D FORWARD -s 172.16.100.0/24 -d 172.16.20.0/24 -j ACCEPT 2>/dev/null || true
+sudo iptables -D FORWARD -s 172.16.20.0/24 -d 172.16.100.0/24 -j ACCEPT 2>/dev/null || true
+
+# Force the host router to preserve the real IPs for internal cross-subnet traffic
+sudo iptables -t nat -I POSTROUTING 1 -s 172.16.100.0/24 -d 172.16.20.0/24 -j RETURN
+sudo iptables -t nat -I POSTROUTING 1 -s 172.16.20.0/24 -d 172.16.100.0/24 -j RETURN
+sudo iptables -I FORWARD 1 -s 172.16.100.0/24 -d 172.16.20.0/24 -j ACCEPT
+sudo iptables -I FORWARD 1 -s 172.16.20.0/24 -d 172.16.100.0/24 -j ACCEPT
 
 echo "[Success] Host bootstrap and isolated network architecture completed!"
