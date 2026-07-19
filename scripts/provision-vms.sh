@@ -12,6 +12,13 @@ fi
 VNET_NAME="vnet"
 DATASTORE_NAME="default"
 
+echo "Configuring Virtual Network DNS..."
+# Append the DNS configuration directly to the OpenNebula VNet
+echo 'DNS="8.8.8.8 1.1.1.1"' > /tmp/vnet-dns.txt
+onevnet update "$VNET_NAME" /tmp/vnet-dns.txt --append
+rm -f /tmp/vnet-dns.txt
+echo "[Success] DNS injected into $VNET_NAME."
+
 # Check if template already exists
 if ! onetemplate list | grep -q "ubuntu-template"; then
     echo "Downloading Ubuntu 22.04 template from the OpenNebula Marketplace..."
