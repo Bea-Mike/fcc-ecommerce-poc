@@ -29,36 +29,42 @@ echo "Configuring Isolated Database Network Bridge..."
 if ! ip link show dev onebr-db &>/dev/null; then
     echo "Creating virtual bridge 'onebr-db'..."
     sudo ip link add name onebr-db type bridge
-    sudo ip addr add 172.16.20.1/24 dev onebr-db
-    sudo ip link set dev onebr-db up
-    echo "[Success] Bridge 'onebr-db' initialized at 172.16.20.1"
-else
-    echo "[Info] Virtual bridge 'onebr-db' already exists. Skipping creation."
 fi
+
+if ! ip addr show dev onebr-db | grep -q "172.16.20.1"; then
+    echo "Assigning IP 172.16.20.1/24 to 'onebr-db'..."
+    sudo ip addr add 172.16.20.1/24 dev onebr-db
+fi
+
+sudo ip link set dev onebr-db up
+echo "[Success] Bridge 'onebr-db' active at 172.16.20.1"
 
 echo "Enforcing Linux Kernel IP Forwarding..."
 sudo sysctl -w net.ipv4.ip_forward=1
 echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-cloud-routing.conf > /dev/null
 
-echo "Configuring Conditional NAT Firewall Rules..."
-if ! sudo iptables -t nat -C POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE &>/dev/null; then
-    echo "Applying conditional internet masquerading for the database zone..."
-    sudo iptables -t nat -A POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE
-else
-    echo "[Info] Conditional NAT rule already present."
-fi
+echo "Enabling Outbound Internet NAT for all virtual networks..."
+# Clean existing rules to maintain idempotency
+sudo iptables -t nat -D POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+sudo iptables -t nat -D POSTROUTING -s 172.16.100.0/24 ! -d 172.16.0.0/12 -j MASQUERADE 2>/dev/null || true
+sudo iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+sudo iptables -D FORWARD -s 172.16.20.0/24 -j ACCEPT 2>/dev/null || true
+sudo iptables -D FORWARD -s 172.16.100.0/24 -j ACCEPT 2>/dev/null || true
 
-echo "Preventing MiniONE from hiding K8s node identities..."
-# Clean old instances to keep the rules clean and idempotent
+# 2. Force NAT out to the internet for both subnets
+sudo iptables -t nat -A POSTROUTING -s 172.16.20.0/24 ! -d 172.16.0.0/12 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -s 172.16.100.0/24 ! -d 172.16.0.0/12 -j MASQUERADE
+
+# 3. Enable outbound forwarding & return packets
+sudo iptables -I FORWARD 1 -m state --state RELATED,ESTABLISHED -j ACCEPT
+sudo iptables -I FORWARD 1 -s 172.16.20.0/24 -j ACCEPT
+sudo iptables -I FORWARD 1 -s 172.16.100.0/24 -j ACCEPT
+
+echo "Preserving K8s source identities for cross-subnet traffic..."
 sudo iptables -t nat -D POSTROUTING -s 172.16.100.0/24 -d 172.16.20.0/24 -j RETURN 2>/dev/null || true
 sudo iptables -t nat -D POSTROUTING -s 172.16.20.0/24 -d 172.16.100.0/24 -j RETURN 2>/dev/null || true
-sudo iptables -D FORWARD -s 172.16.100.0/24 -d 172.16.20.0/24 -j ACCEPT 2>/dev/null || true
-sudo iptables -D FORWARD -s 172.16.20.0/24 -d 172.16.100.0/24 -j ACCEPT 2>/dev/null || true
 
-# Force the host router to preserve the real IPs for internal cross-subnet traffic
-sudo iptables -t nat -I POSTROUTING 1 -s 172.16.100.0/24 -d 172.16.20.0/24 -j RETURN
 sudo iptables -t nat -I POSTROUTING 1 -s 172.16.20.0/24 -d 172.16.100.0/24 -j RETURN
-sudo iptables -I FORWARD 1 -s 172.16.100.0/24 -d 172.16.20.0/24 -j ACCEPT
-sudo iptables -I FORWARD 1 -s 172.16.20.0/24 -d 172.16.100.0/24 -j ACCEPT
+sudo iptables -t nat -I POSTROUTING 1 -s 172.16.100.0/24 -d 172.16.20.0/24 -j RETURN
 
-echo "[Success] Host bootstrap and isolated network architecture completed!"
+echo "[Success] Host bootstrap complete. Internet and micro-segmentation active!"
