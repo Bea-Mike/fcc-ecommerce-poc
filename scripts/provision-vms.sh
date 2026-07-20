@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script provisions 3 VMs (1 DB inside an isolated network, 2 K8s Nodes inside the flat network) using OpenNebula.
+# This script provisions 3 VMs using OpenNebula.
 
 set -e
 
@@ -54,30 +54,63 @@ else
     echo "Template 'ubuntu-template' already exists. Skipping download..."
 fi
 
-# Function to provision VMs flexibly across different networks
+# Helper function to wait until a VM reaches RUNNING state
+wait_for_vm_running() {
+    local vm_id=$1
+    echo "Waiting for VM ID $vm_id to reach RUNNING state..."
+    while true; do
+        local lcm_state
+        lcm_state=$(onevm show "$vm_id" | grep "LCM_STATE" | awk -F':' '{print $2}' | tr -d ' ')
+        if [ "$lcm_state" = "RUNNING" ]; then
+            echo "[Info] VM ID $vm_id is now RUNNING."
+            break
+        fi
+        sleep 3
+    done
+}
+
+# Function to provision VMs, wait for RUNNING status, and resize root disk (DISK 0)
 provision_vm() {
     local vm_name=$1
     local memory=$2
     local cpu=$3
-    local target_nic=$4
+    local disk_size_mb=$4
+    local target_nic=$5
 
-    echo "Instantiating ${vm_name} (${memory}MB RAM, ${cpu} vCPU) on network '${target_nic}'..."
-    
-    onetemplate instantiate "ubuntu-template" \
+    echo "Instantiating ${vm_name} (${memory}MB RAM, ${cpu} vCPU, ${disk_size_mb}MB Disk) on network '${target_nic}'..."
+
+    # Instantiate VM using standard CLI flags
+    local output
+    output=$(onetemplate instantiate "ubuntu-template" \
         --name "$vm_name" \
         --memory "$memory" \
         --cpu "$cpu" --vcpu "$cpu" \
-        --nic "$target_nic"
-        
-    echo "[Success] $vm_name was successfully submitted to the hypervisor!"
+        --nic "$target_nic")
+
+    # Extract the numeric VM ID
+    local vm_id
+    vm_id=$(echo "$output" | awk '{print $NF}')
+
+    if [ -z "$vm_id" ]; then
+        echo "Error: Failed to retrieve VM ID for $vm_name"
+        exit 1
+    fi
+
+    wait_for_vm_running "$vm_id"
+
+    # Resize DISK 0
+    echo "Resizing DISK 0 for VM $vm_id ($vm_name) to ${disk_size_mb}MB..."
+    onevm disk-resize "$vm_id" 0 "$disk_size_mb"
+
+    echo "[Success] $vm_name (ID: $vm_id) is running and disk expanded!"
 }
 
 echo "Executing Micro-Segmented VM Provisioning..."
-# Provision the Database VM inside the isolated network room
-provision_vm "db-vm" 2048 1 "$DB_VNET_NAME"
+# Provision DB VM
+provision_vm "db-vm" 2048 1 10240 "$DB_VNET_NAME"
 
-# Provision the Kubernetes nodes inside the original flat network room
-provision_vm "k8s-master" 3072 2 "$VNET_NAME"
-provision_vm "k8s-worker" 3072 2 "$VNET_NAME"
+# Provision K8s nodes
+provision_vm "k8s-master" 3072 2 15360 "$VNET_NAME"
+provision_vm "k8s-worker" 3072 2 15360 "$VNET_NAME"
 
 echo "All VMs provisioned successfully!"
