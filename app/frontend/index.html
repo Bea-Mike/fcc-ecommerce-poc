@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E-Commerce Store</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; margin: 0; padding: 2rem; }
+    h1 { color: #1a202c; text-align: center; margin-bottom: 2rem; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; }
+    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; }
+    .price { font-size: 1.25rem; font-weight: bold; color: #2b6cb0; margin: 0.5rem 0; }
+    .stock { color: #718096; font-size: 0.9rem; margin-bottom: 1rem; }
+    button { background: #3182ce; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background 0.2s; width: 100%; }
+    button:hover { background: #2b6cb0; }
+    button:disabled { background: #cbd5e0; cursor: not-allowed; }
+    #notification { margin-bottom: 1.5rem; padding: 1rem; border-radius: 6px; display: none; text-align: center; font-weight: 500; }
+    .success { background: #c6f6d5; color: #22543d; border: 1px solid #9ae6b4; }
+    .error { background: #fed7d7; color: #742a2a; border: 1px solid #feb2b2; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>E-Commerce Storefront</h1>
+    <div id="notification"></div>
+    <div id="products-grid" class="grid">Loading catalog...</div>
+  </div>
+
+  <script>
+    const isLocal = window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const API_URL = isLocal ? 'http://localhost:5000/api' : '/api';
+
+    async function fetchProducts() {
+      const grid = document.getElementById('products-grid');
+      try {
+        const res = await fetch(`${API_URL}/products`);
+        if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
+        const products = await res.json();
+        
+        grid.innerHTML = products.map(p => `
+          <div class="card">
+            <h3>${p.name}</h3>
+            <div class="price">$${parseFloat(p.price).toFixed(2)}</div>
+            <div class="stock">In Stock: ${p.stock}</div>
+            <button onclick="buyProduct(${p.id})" ${p.stock <= 0 ? 'disabled' : ''}>
+              ${p.stock > 0 ? 'Buy Now' : 'Out of Stock'}
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        grid.innerHTML = `<p style="color:red;">Error loading catalog: ${err.message}. Make sure the backend server is running on port 5000.</p>`;
+      }
+    }
+
+    async function buyProduct(id) {
+      const notif = document.getElementById('notification');
+      try {
+        const res = await fetch(`${API_URL}/orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId: id, quantity: 1 })
+        });
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || 'Purchase failed');
+
+        notif.className = 'success';
+        notif.innerText = `Success! Order #${data.order.id} placed.`;
+        notif.style.display = 'block';
+        
+        // Refresh catalog to update stock numbers on screen
+        fetchProducts();
+      } catch (err) {
+        notif.className = 'error';
+        notif.innerText = err.message;
+        notif.style.display = 'block';
+      }
+    }
+
+    fetchProducts();
+  </script>
+</body>
+</html>
