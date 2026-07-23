@@ -32,6 +32,8 @@ install_microk8s() {
         hostnamectl set-hostname "${NODE_ROLE}"
         echo "127.0.0.1 localhost" > /etc/hosts
         echo "127.0.1.1 ${NODE_ROLE}" >> /etc/hosts
+        echo "172.16.100.2 k8s-master" >> /etc/hosts
+        echo "172.16.100.3 k8s-worker" >> /etc/hosts
 
         echo "Fixing DNS Resolution for Snap compatibility..."
         mkdir -p /etc/systemd/resolved.conf.d/
@@ -60,15 +62,15 @@ EOF
 install_microk8s "$K8S_MASTER_IP" "k8s-master"
 install_microk8s "$K8S_WORKER_IP" "k8s-worker"
 
-echo "Enabling Master Add-ons (DNS)..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s enable dns"
+echo "Enabling Master Add-ons (DNS, Metrics-Server, Ingress)..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s enable dns metrics-server ingress"
 
 echo "Clustering the Nodes..."
 IS_CLUSTERED=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s.kubectl get nodes | grep -c 'k8s-worker' || true")
 
 if [ "$IS_CLUSTERED" -eq 0 ]; then
     echo "Generating cluster join token on Master..."
-    JOIN_CMD=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s add-node | grep 'microk8s join' | head -n 1")
+    JOIN_CMD=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s add-node --format short")
     
     if [ -z "$JOIN_CMD" ]; then
         echo "Fatal: Failed to generate a join token from the master."
