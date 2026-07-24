@@ -1,3 +1,4 @@
 minione
 .db_env
+secret.yaml
 node_modules/
