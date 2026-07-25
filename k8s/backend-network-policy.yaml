@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow incoming requests on port 5000 from frontend pods & Ingress
+    - ports:
+        - protocol: TCP
+          port: 5000
+  egress:
+    # Allow connection to the external PostgreSQL VM IP on port 5432
+    - to:
+        - ipBlock:
+            cidr: 172.16.20.2/32
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
