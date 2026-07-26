@@ -8,6 +8,9 @@ echo "Installing KVM, Hypervisor dependencies, and SSH..."
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils curl openssh-server
 
+echo "Installing kubectl for remote cluster management..."
+sudo snap install kubectl --classic
+
 echo "Ensuring SSH service is running..."
 sudo systemctl enable --now ssh
 

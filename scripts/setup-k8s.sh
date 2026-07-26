@@ -3,8 +3,9 @@
 
 set -e
 
-if [ "$(whoami)" != "oneadmin" ]; then
-    echo "Error: This script must be run as the 'oneadmin' user."
+# Prevent running as oneadmin or root directly to keep local permissions intact
+if [ "$(whoami)" == "oneadmin" ] || [ "$(whoami)" == "root" ]; then
+    echo "Error: Please run this script as your normal host user."
     exit 1
 fi
 
@@ -15,7 +16,7 @@ K8S_MANIFEST_DIR="$PROJECT_ROOT/k8s"
 K8S_MASTER_IP="172.16.100.2"
 K8S_WORKER_IP="172.16.100.3"
 
-# Pre-flight Checks
+# Pre-flight Checks (Local Files)
 if [ ! -d "$K8S_MANIFEST_DIR" ]; then
     echo "Fatal: Kubernetes manifest directory not found at ${K8S_MANIFEST_DIR}."
     exit 1
@@ -28,7 +29,7 @@ fi
 
 echo "Pre-flight SSH Checks..."
 for IP in "$K8S_MASTER_IP" "$K8S_WORKER_IP"; do
-    if ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@"${IP}" "echo '[Success] SSH to ${IP} established!'"; then
+    if ! sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@"${IP}" "echo '[Success] SSH to ${IP} established!'"; then
         echo "Fatal: Cannot connect to node at ${IP}. Exiting."
         exit 1
     fi
@@ -40,7 +41,7 @@ install_microk8s() {
     local NODE_ROLE=$2
     
     echo "Installing MicroK8s on ${NODE_ROLE} (${NODE_IP})..."
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${NODE_IP}" "NODE_ROLE='${NODE_ROLE}' bash -s" << 'EOF'
+    sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${NODE_IP}" "NODE_ROLE='${NODE_ROLE}' bash -s" << 'EOF'
         set -ex
 
         echo "Configuring correct hostname for Kubernetes..."
@@ -78,14 +79,14 @@ install_microk8s "$K8S_MASTER_IP" "k8s-master"
 install_microk8s "$K8S_WORKER_IP" "k8s-worker"
 
 echo "Enabling Master Add-ons (DNS, Metrics-Server, Ingress)..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s enable dns metrics-server ingress"
+sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s enable dns metrics-server ingress"
 
 echo "Clustering the Nodes..."
-IS_CLUSTERED=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s.kubectl get nodes | grep -c 'k8s-worker' || true")
+IS_CLUSTERED=$(sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s.kubectl get nodes | grep -c 'k8s-worker' || true")
 
 if [ "$IS_CLUSTERED" -eq 0 ]; then
     echo "Generating cluster join token on Master..."
-    JOIN_CMD=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s add-node --format short")
+    JOIN_CMD=$(sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s add-node --format short")
     
     if [ -z "$JOIN_CMD" ]; then
         echo "Fatal: Failed to generate a join token from the master."
@@ -93,13 +94,13 @@ if [ "$IS_CLUSTERED" -eq 0 ]; then
     fi
     
     echo "Executing join command on Worker..."
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_WORKER_IP}" "${JOIN_CMD}"
+    sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_WORKER_IP}" "${JOIN_CMD}"
     
     echo "Waiting for Worker to register and become Ready..."
     WORKER_READY=false
     # Increased to 24 retries (120 seconds) to give the CNI network time to start
     for i in {1..24}; do
-        STATUS=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s.kubectl get nodes | grep 'k8s-worker' | awk '{print \$2}' || true")
+        STATUS=$(sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s.kubectl get nodes | grep 'k8s-worker' | awk '{print \$2}' || true")
         if [ "$STATUS" == "Ready" ]; then
             WORKER_READY=true
             break
@@ -118,7 +119,7 @@ fi
 
 echo "Configuring Remote Kubeconfig for Local Control..."
 mkdir -p ~/.kube
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s config" > ~/.kube/config
+sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${K8S_MASTER_IP}" "microk8s config" > ~/.kube/config
 chmod 600 ~/.kube/config
 
 # Verify local kubectl can communicate with the remote cluster API
@@ -130,31 +131,31 @@ fi
 echo "Deploying Application Manifests Remotely in Dependency Order..."
 set -x
 
-echo "Step 1: Waiting for Ingress Controller & System Add-ons to be ready..."
+echo "Waiting for Ingress Controller & System Add-ons to be ready..."
 kubectl rollout status daemonset/nginx-ingress-microk8s-controller -n ingress --timeout=120s
 kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s
 
-echo "Step 2: Applying ConfigMaps and Secrets..."
+echo "Applying ConfigMaps and Secrets..."
 kubectl apply -f "$K8S_MANIFEST_DIR/configmap.yaml"
 kubectl apply -f "$K8S_MANIFEST_DIR/secret.yaml"
 
-echo "Step 3: Applying Kubernetes Services..."
+echo "Applying Kubernetes Services..."
 kubectl apply -f "$K8S_MANIFEST_DIR/backend-service.yaml"
 kubectl apply -f "$K8S_MANIFEST_DIR/frontend-service.yaml"
 
-echo "Step 4: Applying Microservice Deployments..."
+echo "Applying Microservice Deployments..."
 kubectl apply -f "$K8S_MANIFEST_DIR/backend-deployment.yaml"
 kubectl apply -f "$K8S_MANIFEST_DIR/frontend-deployment.yaml"
 
-echo "Step 5: Waiting for Application Rollouts..."
+echo "Waiting for Application Rollouts..."
 kubectl rollout status deployment/backend-deployment --timeout=180s
 kubectl rollout status deployment/frontend-deployment --timeout=180s
 
-echo "Step 6: Applying Network Policies..."
+echo "Applying Network Policies..."
 kubectl apply -f "$K8S_MANIFEST_DIR/backend-network-policy.yaml"
 kubectl apply -f "$K8S_MANIFEST_DIR/frontend-network-policy.yaml"
 
-echo "Step 7: Applying Autoscaling (HPA) and Ingress..."
+echo "Applying Autoscaling (HPA) and Ingress..."
 kubectl apply -f "$K8S_MANIFEST_DIR/backend-hpa.yaml"
 kubectl apply -f "$K8S_MANIFEST_DIR/ingress.yaml"
 
@@ -163,7 +164,7 @@ set +x
 echo "Performing Final End-to-End Validation..."
 HEALTH_CHECK_PASSED=false
 for i in {1..12}; do
-    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://172.16.100.2/api/products || true")
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://172.16.100.2/api/products || true)
     if [ "$HTTP_CODE" == "200" ]; then
         HEALTH_CHECK_PASSED=true
         break
