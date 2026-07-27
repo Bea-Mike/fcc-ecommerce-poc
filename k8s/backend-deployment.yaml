@@ -20,8 +20,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
       containers:
-        - name: backend
-          image: beatricebalzarini/fcc-backend:v2.0
+        - name: backends
+          image: beatricebalzarini/fcc-backend:v3.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000

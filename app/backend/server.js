@@ -46,6 +46,19 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// GET /api/stress - CPU-intensive endpoint for HPA load testing
+app.get('/api/stress', (req, res) => {
+  const cycles = req.query.cycles ? parseInt(req.query.cycles, 10) : 10000000;
+  let count = 0;
+
+  // Synchronous CPU-blocking computation to trigger CPU utilization spikes for HPA
+  for (let i = 0; i < cycles; i++) {
+    count += Math.sqrt(i) * Math.sqrt(i);
+  }
+
+  res.json({ message: 'CPU stress calculation complete', cycles, count });
+});
+
 // GET /api/products - List all products
 app.get('/api/products', async (req, res) => {
   try {
