@@ -21,7 +21,7 @@ spec:
         runAsUser: 1000
       containers:
         - name: backend
-          image: beatricebalzarini/fcc-backend:v1.0
+          image: beatricebalzarini/fcc-backend:v2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
