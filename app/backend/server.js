@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -8,12 +10,28 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Function to read secrets safely from mounted tmpfs volumes
+function getSecret(secretKey, fallbackEnv) {
+  const secretPath = path.join('/etc/secrets', secretKey);
+  if (fs.existsSync(secretPath)) {
+    try {
+      return fs.readFileSync(secretPath, 'utf8').trim();
+    } catch (err) {
+      console.error(`Failed to read secret file at ${secretPath}:`, err.message);
+    }
+  }
+  return process.env[fallbackEnv] || 'securepassword123';
+}
+
+// Retrieve DB Password from mounted secret volume (/etc/secrets/DB_PASSWORD)
+const dbPassword = getSecret('DB_PASSWORD', 'DB_PASSWORD');
+
 // PostgreSQL Pool Connection Setup
 const pool = new Pool({
   host: process.env.DB_HOST || '172.16.20.2',
   port: process.env.DB_PORT || 5432,
   user: process.env.DB_USER || 'app_user',
-  password: process.env.DB_PASSWORD || 'securepassword123',
+  password: dbPassword,
   database: process.env.DB_NAME || 'ecommerce_db',
   connectionTimeoutMillis: 5000,
 });

@@ -33,12 +33,16 @@ spec:
               drop:
                 - ALL
 
-          # Direct mapping of environment variables from ConfigMap & Secret
+          # Mount secret volume into container (In-Memory /tmpfs)
+          volumeMounts:
+            - name: db-secret-volume
+              mountPath: "/etc/secrets"
+              readOnly: true
+
+          # Load ONLY non-sensitive configuration variables from ConfigMap
           envFrom:
             - configMapRef:
                 name: db-config
-            - secretRef:
-                name: db-secret
 
           # CPU/RAM limits for HPA autoscaling
           resources:
@@ -62,3 +66,9 @@ spec:
               port: 5000
             initialDelaySeconds: 5
             periodSeconds: 5
+
+      # Volume definition linking directly to Kubernetes Secret 'db-secret'
+      volumes:
+        - name: db-secret-volume
+          secret:
+            secretName: db-secret
