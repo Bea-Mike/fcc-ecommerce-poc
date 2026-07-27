@@ -3,16 +3,16 @@
 
 set -e
 
-if [ "$(whoami)" != "oneadmin" ]; then
-    echo "Error: This script must be run as the 'oneadmin' user."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DB_ENV_FILE="$PROJECT_ROOT/.db_env"
+
+if [ ! -f "$DB_ENV_FILE" ]; then
+    echo "Error: .db_env file not found at $DB_ENV_FILE!"
     exit 1
 fi
 
-if [ ! -f "../.db_env" ] && [ ! -f ".db_env" ]; then
-    echo "Error: .db_env file not found! Please create it with DB_PASSWORD='...' in the project root."
-    exit 1
-fi
-source ../.db_env 2>/dev/null || source .db_env
+source "$DB_ENV_FILE"
 
 DB_USER="${DB_USER:-app_user}"
 DB_NAME="${DB_NAME:-ecommerce_db}"
@@ -23,15 +23,13 @@ if [ -z "$DB_PASSWORD" ]; then
 fi
 
 DB_IP="172.16.20.2"
-K8S_MASTER_IP="172.16.100.2"
-K8S_WORKER_IP="172.16.100.3"
 
 echo "Testing SSH Connection to ${DB_IP}..."
-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${DB_IP} "echo '[Success] SSH connection established!'"
+sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${DB_IP} "echo '[Success] SSH connection established!'"
 
 echo "Executing Database Setup and Schema Initialization..."
 
-ssh -o StrictHostKeyChecking=no root@${DB_IP} "DB_PWD='${DB_PASSWORD}' DB_USER_VAR='${DB_USER}' DB_NAME_VAR='${DB_NAME}'" bash -s << 'EOF'
+sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} "DB_PWD='${DB_PASSWORD}' DB_USER_VAR='${DB_USER}' DB_NAME_VAR='${DB_NAME}'" bash -s << 'EOF'
     set -ex
 
     echo "Fixing DNS Resolution..."

@@ -3,12 +3,6 @@
 
 set -e
 
-# Prevent running as oneadmin or root directly to keep local permissions intact
-if [ "$(whoami)" == "oneadmin" ] || [ "$(whoami)" == "root" ]; then
-    echo "Error: Please run this script as your normal host user."
-    exit 1
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 K8S_MANIFEST_DIR="$PROJECT_ROOT/k8s"

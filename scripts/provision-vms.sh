@@ -3,12 +3,6 @@
 
 set -e
 
-# Ensure the script is run as 'oneadmin'
-if [ "$(whoami)" != "oneadmin" ]; then
-    echo "Error: This script must be run as the 'oneadmin' user."
-    exit 1
-fi
-
 VNET_NAME="vnet"
 DB_VNET_NAME="db-net"
 DATASTORE_NAME="default"
@@ -16,13 +10,13 @@ DATASTORE_NAME="default"
 echo "Configuring Flat Virtual Network DNS..."
 # Append the DNS configuration directly to the default OpenNebula VNet
 echo 'DNS="8.8.8.8 1.1.1.1"' > /tmp/vnet-dns.txt
-onevnet update "$VNET_NAME" /tmp/vnet-dns.txt --append
+chmod 644 /tmp/vnet-dns.txt
+sudo -u oneadmin onevnet update "$VNET_NAME" /tmp/vnet-dns.txt --append
 rm -f /tmp/vnet-dns.txt
 echo "[Success] DNS injected into $VNET_NAME."
 
 echo "Registering Isolated Database Network Room..."
-# Register the VNet template only if it doesn't already exist
-if ! onevnet list | grep -q "$DB_VNET_NAME"; then
+if ! sudo -u oneadmin onevnet list 2>/dev/null | grep -q "$DB_VNET_NAME"; then
     echo "Creating OpenNebula Virtual Network '$DB_VNET_NAME' linked to 'onebr-db'..."
     cat <<EOF > /tmp/db-vnet-template.txt
 NAME = "$DB_VNET_NAME"
@@ -38,7 +32,8 @@ AR = [
     SIZE = "10"
 ]
 EOF
-    onevnet create /tmp/db-vnet-template.txt
+    chmod 644 /tmp/db-vnet-template.txt
+    sudo -u oneadmin onevnet create /tmp/db-vnet-template.txt
     rm -f /tmp/db-vnet-template.txt
     echo "[Success] Network '$DB_VNET_NAME' successfully registered in OpenNebula."
 else
@@ -47,9 +42,9 @@ fi
 
 # Check if OS template already exists
 echo "Checking OS Template Availability..."
-if ! onetemplate list | grep -q "ubuntu-template"; then
+if ! sudo -u oneadmin onetemplate list 2>/dev/null | grep -q "ubuntu-template"; then
     echo "Downloading Ubuntu 22.04 template from the OpenNebula Marketplace..."
-    onemarketapp export 54 "ubuntu-template" -d ${DATASTORE_NAME}
+    sudo -u oneadmin onemarketapp export 54 "ubuntu-template" -d ${DATASTORE_NAME}
 else
     echo "Template 'ubuntu-template' already exists. Skipping download..."
 fi
@@ -60,7 +55,7 @@ wait_for_vm_running() {
     echo "Waiting for VM ID $vm_id to reach RUNNING state..."
     while true; do
         local lcm_state
-        lcm_state=$(onevm show "$vm_id" | grep "LCM_STATE" | awk -F':' '{print $2}' | tr -d ' ')
+        lcm_state=$(sudo -u oneadmin onevm show "$vm_id" | grep "LCM_STATE" | awk -F':' '{print $2}' | tr -d ' ')
         if [ "$lcm_state" = "RUNNING" ]; then
             echo "[Info] VM ID $vm_id is now RUNNING."
             break
@@ -81,7 +76,7 @@ provision_vm() {
 
     # Instantiate VM using standard CLI flags
     local output
-    output=$(onetemplate instantiate "ubuntu-template" \
+    output=$(sudo -u oneadmin onetemplate instantiate "ubuntu-template" \
         --name "$vm_name" \
         --memory "$memory" \
         --cpu "$cpu" --vcpu "$cpu" \
@@ -100,7 +95,7 @@ provision_vm() {
 
     # Resize DISK 0
     echo "Resizing DISK 0 for VM $vm_id ($vm_name) to ${disk_size_mb}MB..."
-    onevm disk-resize "$vm_id" 0 "$disk_size_mb"
+    sudo -u oneadmin onevm disk-resize "$vm_id" 0 "$disk_size_mb"
 
     echo "[Success] $vm_name (ID: $vm_id) is running and disk expanded!"
 }
