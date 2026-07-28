@@ -15,8 +15,13 @@ spec:
       labels:
         app: backend
     spec:
+      # Block automatic K8s API token injection inside containers
+      automountServiceAccountToken: false
+
       # Pod Security Context: non-root user "node"
       securityContext:
+        seccompProfile:
+          type: RuntimeDefault   # Restricts host kernel syscalls
         runAsNonRoot: true
         runAsUser: 1000
       containers:

@@ -15,12 +15,30 @@ spec:
       labels:
         app: frontend
     spec:
+      # Block automatic K8s API token injection inside containers
+      automountServiceAccountToken: false
+
+      # Pod Security Context
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault   # Restricts host kernel syscalls
+        runAsNonRoot: true
+        runAsUser: 1000
+
       containers:
         - name: frontend
           image: beatricebalzarini/fcc-frontend:v1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+
+          # Container Security Hardening
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
           resources:
             requests:
               cpu: "50m"
