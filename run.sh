@@ -137,4 +137,21 @@ echo "Setting up database..."
 echo "Setting up Kubernetes..."
 "$SCRIPT_DIR/setup-k8s.sh"
 
-echo "Infrastructure setup completed successfully."
+# Dynamically fetch primary Host IP for Sunstone URL display
+HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7}')
+
+echo ""
+echo "=================================================================="
+echo "      🚀 E-COMMERCE POC DEPLOYMENT COMPLETED SUCCESSFULLY 🚀      "
+echo "=================================================================="
+echo ""
+echo " You can now access the application and management interfaces:"
+echo ""
+echo "  🌐 Web Frontend Application : http://172.16.100.2/"
+echo "  🔌 Backend Products API    : http://172.16.100.2/api/products"
+echo "  ☁️  OpenNebula Sunstone UI : http://${HOST_IP:-localhost}"
+echo ""
+echo " Useful Management Commands:"
+echo "  - Test HPA / Autoscaling   : sudo ./scripts/test-hpa.sh"
+echo ""
+echo "=================================================================="
