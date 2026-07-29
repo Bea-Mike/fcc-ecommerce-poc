@@ -29,8 +29,17 @@ sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${DB_I
 
 echo "Executing Database Setup and Schema Initialization..."
 
-sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} "DB_PWD='${DB_PASSWORD}' DB_USER_VAR='${DB_USER}' DB_NAME_VAR='${DB_NAME}'" bash -s << 'EOF'
+# Escape variables safely for shell expansion over SSH stdin (hides credentials from host ps aux)
+SAFE_DB_PWD=$(printf '%q' "$DB_PASSWORD")
+SAFE_DB_USER=$(printf '%q' "$DB_USER")
+SAFE_DB_NAME=$(printf '%q' "$DB_NAME")
+
+sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} bash -s << EOF
     set -ex
+
+    DB_PWD=${SAFE_DB_PWD}
+    DB_USER_VAR=${SAFE_DB_USER}
+    DB_NAME_VAR=${SAFE_DB_NAME}
 
     echo "Fixing DNS Resolution..."
     mkdir -p /etc/systemd/resolved.conf.d/
@@ -46,26 +55,27 @@ sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} "DB_PWD='${DB_PAS
     DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib ufw
 
     echo "Configuring Network Binding..."
-    PG_CONF=$(find /etc/postgresql -name postgresql.conf)
-    sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "$PG_CONF"
+    PG_CONF=\$(find /etc/postgresql -name postgresql.conf)
+    sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/g" "\$PG_CONF"
 
     echo "Configuring Host-Based Auth..."
-    PG_HBA=$(find /etc/postgresql -name pg_hba.conf)
+    PG_HBA=\$(find /etc/postgresql -name pg_hba.conf)
     # Whitelisting K8s IPs
-    echo "host    all             all             172.16.100.2/32         md5" >> "$PG_HBA"
-    echo "host    all             all             172.16.100.3/32         md5" >> "$PG_HBA"
+    echo "host    all             all             172.16.100.2/32         md5" >> "\$PG_HBA"
+    echo "host    all             all             172.16.100.3/32         md5" >> "\$PG_HBA"
 
     echo "Restarting Service..."
     systemctl restart postgresql
     systemctl enable postgresql
 
     echo "Provisioning Database and User..."
-    sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_VAR};" || true
-    sudo -u postgres psql -c "CREATE USER ${DB_USER_VAR} WITH PASSWORD '${DB_PWD}';" || true
-    sudo -u postgres psql -c "ALTER DATABASE ${DB_NAME_VAR} OWNER TO ${DB_USER_VAR};" || true
+    sudo -u postgres psql -c "CREATE DATABASE \${DB_NAME_VAR};" || true
+    sudo -u postgres psql -c "CREATE USER \${DB_USER_VAR} WITH PASSWORD '\${DB_PWD}';" || true
+    sudo -u postgres psql -c "ALTER DATABASE \${DB_NAME_VAR} OWNER TO \${DB_USER_VAR};" || true
 
     echo "Initializing Schema and Everyday Seed Products..."
-    sudo -u postgres psql -d "${DB_NAME_VAR}" << SQL
+    sudo -u postgres psql -d "\${DB_NAME_VAR}" << SQL
+    
 -- Create Products Table
 CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
@@ -96,12 +106,12 @@ SELECT 'Premium Notebook & Pen Set', 12.00, 100
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = 'Premium Notebook & Pen Set');
 
 -- Least-Privilege Model for Application User
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ${DB_USER_VAR};
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${DB_USER_VAR};
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO \${DB_USER_VAR};
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \${DB_USER_VAR};
 
 -- Ensure future tables/sequences follow the same restrictions
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO ${DB_USER_VAR};
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${DB_USER_VAR};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO \${DB_USER_VAR};
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO \${DB_USER_VAR};
 SQL
 
     echo "Securing Firewall..."

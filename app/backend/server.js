@@ -7,7 +7,11 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// Restrict CORS to same-origin in production, allow all in development
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' ? false : '*',
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Function to read secrets safely from mounted tmpfs volumes
@@ -20,7 +24,10 @@ function getSecret(secretKey, fallbackEnv) {
       console.error(`Failed to read secret file at ${secretPath}:`, err.message);
     }
   }
-  return process.env[fallbackEnv] || 'securepassword123';
+  if (process.env[fallbackEnv]) {
+    return process.env[fallbackEnv];
+  }
+  throw new Error(`CRITICAL: Secret '${secretKey}' could not be loaded from volume or environment!`);
 }
 
 // Retrieve DB Password from mounted secret volume (/etc/secrets/DB_PASSWORD)
