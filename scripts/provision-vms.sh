@@ -7,6 +7,11 @@ VNET_NAME="vnet"
 DB_VNET_NAME="db-net"
 DATASTORE_NAME="default"
 
+# Defined Fixed IP Topology
+DB_IP="172.16.20.2"
+K8S_MASTER_IP="172.16.100.2"
+K8S_WORKER_IP="172.16.100.3"
+
 echo "Configuring Flat Virtual Network DNS..."
 # Append the DNS configuration directly to the default OpenNebula VNet
 echo 'DNS="8.8.8.8 1.1.1.1"' > /tmp/vnet-dns.txt
@@ -64,23 +69,25 @@ wait_for_vm_running() {
     done
 }
 
-# Function to provision VMs, wait for RUNNING status, and resize root disk (DISK 0)
+# Provision function with explicit IP binding
 provision_vm() {
     local vm_name=$1
     local memory=$2
     local cpu=$3
     local disk_size_mb=$4
     local target_nic=$5
+    local target_ip=$6
 
-    echo "Instantiating ${vm_name} (${memory}MB RAM, ${cpu} vCPU, ${disk_size_mb}MB Disk) on network '${target_nic}'..."
+    echo "Instantiating ${vm_name} at IP ${target_ip} (${memory}MB RAM, ${cpu} vCPU, ${disk_size_mb}MB Disk)..."
 
     # Instantiate VM using standard CLI flags
     local output
     output=$(sudo -u oneadmin onetemplate instantiate "ubuntu-template" \
         --name "$vm_name" \
         --memory "$memory" \
-        --cpu "$cpu" --vcpu "$cpu" \
-        --nic "$target_nic")
+        --cpu "$cpu" \
+        --vcpu "$cpu" \
+        --nic "$target_nic:IP=$target_ip")
 
     # Extract the numeric VM ID
     local vm_id
@@ -93,19 +100,22 @@ provision_vm() {
 
     wait_for_vm_running "$vm_id"
 
-    # Resize DISK 0
-    echo "Resizing DISK 0 for VM $vm_id ($vm_name) to ${disk_size_mb}MB..."
-    sudo -u oneadmin onevm disk-resize "$vm_id" 0 "$disk_size_mb"
+    local current_disk_size
+    current_disk_size=$(sudo -u oneadmin onevm show "$vm_id" --xml | grep '<SIZE>' | head -n 1 | sed -E 's/.*<SIZE>(<!\[CDATA\[)?([0-9]+).*/\2/')
 
-    echo "[Success] $vm_name (ID: $vm_id) is running and disk expanded!"
+    if [ -n "$current_disk_size" ] && [ "$current_disk_size" -ge "$disk_size_mb" ] 2>/dev/null; then
+        echo "[Info] DISK 0 for VM $vm_id ($vm_name) is already ${current_disk_size}MB. Skipping resize."
+    else
+        echo "Resizing DISK 0 for VM $vm_id ($vm_name) from ${current_disk_size:-unknown}MB to ${disk_size_mb}MB..."
+        sudo -u oneadmin onevm disk-resize "$vm_id" 0 "$disk_size_mb"
+    fi
+
+    echo "[Success] $vm_name (ID: $vm_id) running with static IP: $target_ip!"
 }
 
 echo "Executing Micro-Segmented VM Provisioning..."
-# Provision DB VM
-provision_vm "db-vm" 2048 1 10240 "$DB_VNET_NAME"
-
-# Provision K8s nodes
-provision_vm "k8s-master" 3072 2 15360 "$VNET_NAME"
-provision_vm "k8s-worker" 3072 2 15360 "$VNET_NAME"
+provision_vm "db-vm" 2048 1 10240 "$DB_VNET_NAME" "$DB_IP"
+provision_vm "k8s-master" 3072 2 15360 "$VNET_NAME" "$K8S_MASTER_IP"
+provision_vm "k8s-worker" 3072 2 15360 "$VNET_NAME" "$K8S_WORKER_IP"
 
 echo "All VMs provisioned successfully!"

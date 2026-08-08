@@ -42,10 +42,13 @@ sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} bash -s << EOF
     DB_NAME_VAR=${SAFE_DB_NAME}
 
     echo "Fixing DNS Resolution..."
-    mkdir -p /etc/systemd/resolved.conf.d/
-    echo "[Resolve]" > /etc/systemd/resolved.conf.d/dns.conf
-    echo "DNS=8.8.8.8" >> /etc/systemd/resolved.conf.d/dns.conf
-    systemctl restart systemd-resolved
+    if systemctl list-unit-files | grep -q systemd-resolved; then
+        mkdir -p /etc/systemd/resolved.conf.d/
+        echo "[Resolve]" > /etc/systemd/resolved.conf.d/dns.conf
+        echo "DNS=8.8.8.8" >> /etc/systemd/resolved.conf.d/dns.conf
+        systemctl restart systemd-resolved || true
+    fi
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf
     sleep 2
     
     ping -c 2 8.8.8.8 || { echo "Fatal: No internet routing. Exiting."; exit 1; }
