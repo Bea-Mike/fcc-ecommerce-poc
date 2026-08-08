@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script safely destroys the PoC infrastructure.
+# This script safely destroys the PoC infrastructure, including networks, templates, and images.
 
 set -e
 
@@ -16,7 +16,7 @@ for VM_NAME in "${VMS_TO_DELETE[@]}"; do
     fi
 done
 
-echo "Waiting for virtual network interfaces to release..."
+echo "Waiting for virtual resources to release..."
 sleep 3
 
 echo "Cleaning up isolated cloud networks..."
@@ -28,6 +28,27 @@ if sudo -u oneadmin onevnet list --no-header 2>/dev/null | grep -q "$DB_VNET_NAM
     echo "[Success] Network '${DB_VNET_NAME}' completely removed."
 else
     echo "Network '${DB_VNET_NAME}' not found or already deleted. Skipping."
+fi
+
+echo "Cleaning up OpenNebula templates and images..."
+TEMPLATE_NAME="ubuntu-template"
+
+# Remove template if present
+if sudo -u oneadmin onetemplate list --no-header 2>/dev/null | grep -q "$TEMPLATE_NAME"; then
+    echo "Deleting OpenNebula template '${TEMPLATE_NAME}'..."
+    sudo -u oneadmin onetemplate delete "$TEMPLATE_NAME"
+    echo "[Success] Template '${TEMPLATE_NAME}' deleted."
+else
+    echo "Template '${TEMPLATE_NAME}' not found or already deleted. Skipping."
+fi
+
+# Remove backing image if present
+if sudo -u oneadmin oneimage list --no-header 2>/dev/null | grep -q "$TEMPLATE_NAME"; then
+    echo "Deleting OpenNebula image '${TEMPLATE_NAME}'..."
+    sudo -u oneadmin oneimage delete "$TEMPLATE_NAME"
+    echo "[Success] Image '${TEMPLATE_NAME}' deleted."
+else
+    echo "Image '${TEMPLATE_NAME}' not found or already deleted. Skipping."
 fi
 
 echo "Teardown Complete! The slate is clean."
