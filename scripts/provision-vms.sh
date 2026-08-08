@@ -48,8 +48,18 @@ fi
 # Check if OS template already exists
 echo "Checking OS Template Availability..."
 if ! sudo -u oneadmin onetemplate list 2>/dev/null | grep -q "ubuntu-template"; then
-    echo "Downloading Ubuntu 22.04 template from the OpenNebula Marketplace..."
-    sudo -u oneadmin onemarketapp export 54 "ubuntu-template" -d ${DATASTORE_NAME}
+    echo "Finding Ubuntu 22.04 in OpenNebula Marketplace..."
+    
+    # Resolve the exact App ID for Ubuntu 22.04 dynamically
+    UBUNTU_APP_ID=$(sudo -u oneadmin onemarketapp list | grep -i "Ubuntu 22.04" | head -n 1 | awk '{print $1}')
+    
+    if [ -z "$UBUNTU_APP_ID" ]; then
+        echo "Error: Could not locate Ubuntu 22.04 in OpenNebula Marketplace!"
+        exit 1
+    fi
+    
+    echo "Downloading Ubuntu 22.04 (Marketplace App ID: ${UBUNTU_APP_ID})..."
+    sudo -u oneadmin onemarketapp export "${UBUNTU_APP_ID}" "ubuntu-template" -d "${DATASTORE_NAME}"
 else
     echo "Template 'ubuntu-template' already exists. Skipping download..."
 fi
@@ -69,7 +79,7 @@ wait_for_vm_running() {
     done
 }
 
-# Provision function with explicit IP binding
+# Function to provision VMs
 provision_vm() {
     local vm_name=$1
     local memory=$2
