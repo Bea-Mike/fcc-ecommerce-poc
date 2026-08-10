@@ -30,14 +30,15 @@ function getSecret(secretKey, fallbackEnv) {
   throw new Error(`CRITICAL: Secret '${secretKey}' could not be loaded from volume or environment!`);
 }
 
-// Retrieve DB Password from mounted secret volume (/etc/secrets/DB_PASSWORD)
+// Retrieve DB User and Password securely from mounted secret volume (/etc/secrets)
+const dbUser = getSecret('DB_USER', 'DB_USER');
 const dbPassword = getSecret('DB_PASSWORD', 'DB_PASSWORD');
 
 // PostgreSQL Pool Connection Setup
 const pool = new Pool({
   host: process.env.DB_HOST || '172.16.20.2',
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER || 'app_user',
+  port: parseInt(process.env.DB_PORT || '5432', 10),
+  user: dbUser,
   password: dbPassword,
   database: process.env.DB_NAME || 'ecommerce_db',
   connectionTimeoutMillis: 5000,
