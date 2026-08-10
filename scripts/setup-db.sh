@@ -35,7 +35,7 @@ SAFE_DB_USER=$(printf '%q' "$DB_USER")
 SAFE_DB_NAME=$(printf '%q' "$DB_NAME")
 
 sudo -u oneadmin ssh -o StrictHostKeyChecking=no root@${DB_IP} bash -s << EOF
-    set -ex
+    set -e
 
     DB_PWD=${SAFE_DB_PWD}
     DB_USER_VAR=${SAFE_DB_USER}

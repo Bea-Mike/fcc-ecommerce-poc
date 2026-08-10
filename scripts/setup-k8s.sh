@@ -36,7 +36,7 @@ install_microk8s() {
     
     echo "Installing MicroK8s on ${NODE_ROLE} (${NODE_IP})..."
     sudo -u oneadmin ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@"${NODE_IP}" "NODE_ROLE='${NODE_ROLE}' bash -s" << 'EOF'
-        set -ex
+        set -e
 
         echo "Configuring correct hostname for Kubernetes..."
         hostnamectl set-hostname "${NODE_ROLE}"
