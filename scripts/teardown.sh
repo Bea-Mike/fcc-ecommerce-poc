@@ -22,7 +22,7 @@ sleep 3
 echo "Cleaning up isolated cloud networks..."
 DB_VNET_NAME="db-net"
 
-if sudo -u oneadmin onevnet list --no-header 2>/dev/null | grep -q "$DB_VNET_NAME"; then
+if sudo -u oneadmin onevnet list --no-header 2>/dev/null | grep -qw "$DB_VNET_NAME"; then
     echo "Deleting OpenNebula network '${DB_VNET_NAME}'..."
     sudo -u oneadmin onevnet delete "$DB_VNET_NAME"
     echo "[Success] Network '${DB_VNET_NAME}' completely removed."
@@ -34,7 +34,7 @@ echo "Cleaning up OpenNebula templates and images..."
 TEMPLATE_NAME="ubuntu-template"
 
 # Remove template if present
-if sudo -u oneadmin onetemplate list --no-header 2>/dev/null | grep -q "$TEMPLATE_NAME"; then
+if sudo -u oneadmin onetemplate list --no-header 2>/dev/null | grep -qw "$TEMPLATE_NAME"; then
     echo "Deleting OpenNebula template '${TEMPLATE_NAME}'..."
     sudo -u oneadmin onetemplate delete "$TEMPLATE_NAME"
     echo "[Success] Template '${TEMPLATE_NAME}' deleted."
@@ -43,7 +43,7 @@ else
 fi
 
 # Remove backing image if present
-if sudo -u oneadmin oneimage list --no-header 2>/dev/null | grep -q "$TEMPLATE_NAME"; then
+if sudo -u oneadmin oneimage list --no-header 2>/dev/null | grep -qw "$TEMPLATE_NAME"; then
     echo "Deleting OpenNebula image '${TEMPLATE_NAME}'..."
     sudo -u oneadmin oneimage delete "$TEMPLATE_NAME"
     echo "[Success] Image '${TEMPLATE_NAME}' deleted."
