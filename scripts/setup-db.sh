@@ -14,8 +14,12 @@ fi
 
 source "$DB_ENV_FILE"
 
-DB_USER="${DB_USER:-app_user}"
 DB_NAME="${DB_NAME:-ecommerce_db}"
+
+if [ -z "$DB_USER" ]; then
+    echo "Error: DB_USER is not set in .db_env file!"
+    exit 1
+fi
 
 if [ -z "$DB_PASSWORD" ]; then
     echo "Error: DB_PASSWORD is not set in .db_env file!"
