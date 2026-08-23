@@ -21,7 +21,7 @@ rm -f /tmp/vnet-dns.txt
 echo "[Success] DNS injected into $VNET_NAME."
 
 echo "Registering Isolated Database Network Room..."
-if ! sudo -u oneadmin onevnet list 2>/dev/null | grep -q "$DB_VNET_NAME"; then
+if ! sudo -u oneadmin onevnet list 2>/dev/null | grep -qw "$DB_VNET_NAME"; then
     echo "Creating OpenNebula Virtual Network '$DB_VNET_NAME' linked to 'onebr-db'..."
     cat <<EOF > /tmp/db-vnet-template.txt
 NAME = "$DB_VNET_NAME"
@@ -47,7 +47,7 @@ fi
 
 # Check if OS template already exists
 echo "Checking OS Template Availability..."
-if ! sudo -u oneadmin onetemplate list 2>/dev/null | grep -q "ubuntu-template"; then
+if ! sudo -u oneadmin onetemplate list 2>/dev/null | grep -qw "ubuntu-template"; then
     echo "Finding Ubuntu 22.04 in OpenNebula Marketplace..."
     
     # Resolve the exact App ID for Ubuntu 22.04 dynamically
