@@ -21,7 +21,18 @@ sleep 3
 
 echo "Cleaning up isolated cloud networks..."
 DB_VNET_NAME="db-net"
+K8S_VNET_NAME="k8s-net"
 
+# 1. Rename k8s-net back to the default 'vnet'
+if sudo -u oneadmin onevnet list --list NAME --no-header 2>/dev/null | grep -qw "$K8S_VNET_NAME"; then
+    echo "Restoring Application Network name back to 'vnet'..."
+    sudo -u oneadmin onevnet rename "$K8S_VNET_NAME" "vnet"
+    echo "[Success] Network '$K8S_VNET_NAME' renamed back to 'vnet'."
+else
+    echo "Network '$K8S_VNET_NAME' not found or already renamed. Skipping."
+fi
+
+# Delete db-net completely
 if sudo -u oneadmin onevnet list --no-header 2>/dev/null | grep -qw "$DB_VNET_NAME"; then
     echo "Deleting OpenNebula network '${DB_VNET_NAME}'..."
     sudo -u oneadmin onevnet delete "$DB_VNET_NAME"

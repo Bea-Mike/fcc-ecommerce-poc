@@ -3,7 +3,7 @@
 
 set -e
 
-VNET_NAME="vnet"
+K8S_VNET_NAME="k8s-net"
 DB_VNET_NAME="db-net"
 DATASTORE_NAME="default"
 
@@ -12,13 +12,20 @@ DB_IP="172.16.20.2"
 K8S_MASTER_IP="172.16.100.2"
 K8S_WORKER_IP="172.16.100.3"
 
+echo "Verifying Application Network Name..."
+# Safely check if the default 'vnet' exists using OpenNebula's native formatting
+if sudo -u oneadmin onevnet list --list NAME --no-header 2>/dev/null | grep -qw "vnet"; then
+    echo "[Info] Renaming default OpenNebula network 'vnet' to '$K8S_VNET_NAME'..."
+    sudo -u oneadmin onevnet rename "vnet" "$K8S_VNET_NAME"
+fi
+
 echo "Configuring Flat Virtual Network DNS..."
-# Append the DNS configuration directly to the default OpenNebula VNet
+# Append the DNS configuration directly to the renamed OpenNebula VNet
 echo 'DNS="8.8.8.8 1.1.1.1"' > /tmp/vnet-dns.txt
 chmod 644 /tmp/vnet-dns.txt
-sudo -u oneadmin onevnet update "$VNET_NAME" /tmp/vnet-dns.txt --append
+sudo -u oneadmin onevnet update "$K8S_VNET_NAME" /tmp/vnet-dns.txt --append
 rm -f /tmp/vnet-dns.txt
-echo "[Success] DNS injected into $VNET_NAME."
+echo "[Success] DNS injected into $K8S_VNET_NAME."
 
 echo "Registering Isolated Database Network Room..."
 if ! sudo -u oneadmin onevnet list 2>/dev/null | grep -qw "$DB_VNET_NAME"; then
@@ -125,7 +132,7 @@ provision_vm() {
 
 echo "Executing Micro-Segmented VM Provisioning..."
 provision_vm "db-vm" 2048 1 10240 "$DB_VNET_NAME" "$DB_IP"
-provision_vm "k8s-master" 3072 2 15360 "$VNET_NAME" "$K8S_MASTER_IP"
-provision_vm "k8s-worker" 3072 2 15360 "$VNET_NAME" "$K8S_WORKER_IP"
+provision_vm "k8s-master" 3072 2 15360 "$K8S_VNET_NAME" "$K8S_MASTER_IP"
+provision_vm "k8s-worker" 3072 2 15360 "$K8S_VNET_NAME" "$K8S_WORKER_IP"
 
 echo "All VMs provisioned successfully!"
