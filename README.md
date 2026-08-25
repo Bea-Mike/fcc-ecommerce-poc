@@ -13,7 +13,7 @@ The pipeline automates host bootstrapping, OpenNebula MiniONE deployment, virtua
 ### Key Technical Aspects
 
 * **Infrastructure Automation:** A master shell script (`run.sh`) manages the entire setup and teardown lifecycle, building isolated bridges and virtual machines with zero manual GUI intervention.
-* **Tier Isolation & Micro-segmentation:** The database is hosted on an isolated private VM network (`db-net`), shielded from public access and restricted to accept traffic solely from authorized Kubernetes node IPs via UFW and PostgreSQL host-based authentication (`pg_hba.conf`).
+* **Tier Isolation & Micro-segmentation:** The database is hosted on a dedicated private VM network (`db-net`), physically separated from the application tier and restricted to accept traffic solely from authorized Kubernetes node IPs via UFW and PostgreSQL host-based authentication (`pg_hba.conf`).
 * **Kubernetes Orchestration:** Workloads run inside a two-node MicroK8s cluster (`k8s-master` and `k8s-worker`), utilizing NGINX Ingress Controller for routing, Metrics-Server for resource tracking, and Horizontal Pod Autoscaler (HPA) for automated workload scaling under load.
 * **Container Hardening & In-Memory Secrets:** To prevent credential leaks in build logs or process inspects, application secrets (e.g., database credentials) are generated dynamically at startup and mounted into container pods as temporary in-memory (`tmpfs`) volume files at `/etc/secrets` rather than raw environment variables. Containers execute under restricted, non-root security contexts with all Linux capabilities dropped.
 
@@ -26,48 +26,47 @@ The pipeline automates host bootstrapping, OpenNebula MiniONE deployment, virtua
 
 ## Architecture & Network Flow
 
-```
-                               +-------------------------------------------------+
-                               |                 Bare-Metal Host                 |
-                               |               (Ubuntu 24.04 LTS)                |
-                               +-----------------------+-------------------------+
-                                                       |
-                                         +-------------+-------------+
-                                         |                           |
-                         +---------------+---------------+   +-------+-----------------------+
-                         |     vnet (172.16.100.0/24)    |   |     db-net (172.16.20.0/24)   |
-                         +---------------+---------------+   +-------+-----------------------+
-                                         |                           |
-                 +-----------------------+------------------+        |
-                 |                                          |        |
-      +----------v----------+                    +----------v--------v--+
-      |     k8s-master      |                    |        k8s-worker      |
-      |    172.16.100.2     |                    |       172.16.100.3     |
-      | (MicroK8s Control)  |                    |    (MicroK8s Worker)   |
-      +----------+----------+                    +--------------+-------+
-                 |                                              |
-                 +-----------------------+----------------------+
-                                         | (SQL queries via 5432)
-                                         v
-                              +---------------------+
-                              |        db-vm        |
-                              |     172.16.20.2     |
-                              | (PostgreSQL + UFW)  |
-                              +---------------------+
+```text
+                                [ INTERNET ]
+                                      ^
+                                      | (Outbound NAT for package/image downloads)
+                                      v
++---------------------------------------------------------------------------------------+
+|                                LINUX HOST KERNEL                                      |
+|                  (IP Forwarding Enabled / Acts as Internal Router)                    |
++---------------------------------------------------------------------------------------+
+            ^                                                           ^
+            |                                                           |
++-----------|-----------------------------------------------------------|---------------+
+|           |                 OPENNEBULA INFRASTRUCTURE                 |               |
+|           v                                                           v               |
+|  +-- k8s-net (172.16.100.0/24) -------------------+   +-- db-net (172.16.20.0/24)---+ |
+|  |                                                |   |                             | |
+|  |                                                |   |                             | |
+|  |  +---------------+    +---------------+        |   |  +-----------------------+  | |
+|  |  | K8s Master VM |    | K8s Worker VM |        |   |  | DB VM (PostgreSQL)    |  | |
+|  |  | 172.16.100.2  |    | 172.16.100.3  |        |   |  | 172.16.20.2           |  | |
+|  |  +---------------+    +---------------+        |   |  +-----------------------+  | |
+|  |                                                |   |                             | |
+|  +------------------------------------------------+   +-----------------------------+ |
+|                     |                                                 ^               |
+|                     |        Direct Routing (No NAT)                  |               |
+|                     +-------------------------------------------------+               |
+|                     (Preserves internal IPs for security enforcement)                 |
++---------------------------------------------------------------------------------------+
 
 ```
 
 ### Component Breakdown & Network Connections
 
-1. **Bare-Metal Host (Ubuntu 24.04):** Acts as the primary physical node running OpenNebula MiniONE. It creates two virtual bridges to separate application traffic from internal database traffic.
-2. **`vnet` Subnet (`172.16.100.0/24`):** The primary network hosting the Kubernetes cluster (`k8s-master` and `k8s-worker`).
-3. **`db-net` Subnet (`172.16.20.0/24`):** An isolated network tied to host bridge `onebr-db`. `db-vm` (`172.16.20.2`) resides exclusively on this private subnet.
+1. **Bare-Metal Host (Ubuntu 24.04):** Acts as the primary physical node running OpenNebula MiniONE. It handles external outbound NAT for package downloads and internal IP routing between virtual bridges.
+2. **`k8s-net` Subnet (`172.16.100.0/24`):** The primary application network hosting the Kubernetes cluster (`k8s-master` and `k8s-worker`).
+3. **`db-net` Subnet (`172.16.20.0/24`):** A dedicated internal network tied to host bridge `onebr-db`. `db-vm` (`172.16.20.2`) resides exclusively on this private subnet to isolate data traffic.
 4. **`k8s-master` (`172.16.100.2`) & `k8s-worker` (`172.16.100.3`):** The two virtual machines forming the MicroK8s cluster. Application microservices run inside pods scheduled across these nodes.
-5. **How `k8s-worker` connects to `db-net`:**
-   * Backend pods running inside the Kubernetes cluster query PostgreSQL at `172.16.20.2`.
-   * When a backend pod sends a database query, traffic leaves the node (`172.16.100.3` or `172.16.100.2`) on `vnet` and is routed through the host kernel's IP forwarding table across the `onebr-db` bridge into `db-net`.
-   * The host preserves the original source IP (`172.16.100.x`) without applying NAT.
-   * `db-vm` receives the traffic on port 5432 and accepts it because its UFW firewall and PostgreSQL host authentication (`pg_hba.conf`) are explicitly configured to allow connections from `172.16.100.2` and `172.16.100.3`.
+5. **Cross-Subnet Routing & Security:**
+   * When a backend pod requires data, traffic leaves the node (`172.16.100.x`) and is routed through the host kernel's IP forwarding table (`net.ipv4.ip_forward`) across the `onebr-db` bridge into `db-net`.
+   * Crucially, the host routes this internal traffic **without applying NAT**, preserving the original Kubernetes source IPs.
+   * Because the true source IP is preserved, the `db-vm` host-level firewall (UFW) can accurately identify the traffic and strictly allow port 5432 connections *only* from the `172.16.100.0/24` block, dropping all other requests.
 
 
 ## Repository Structure
@@ -136,8 +135,8 @@ If `.db_env` is missing, `run.sh` will prompt for a database username and passwo
 
 Once deployment finishes, access points are available at:
 
-* **Web Frontend:** [`http://172.16.100.2/`](http://172.16.100.2/)
-* **Backend API:** [`http://172.16.100.2/api/products`](http://172.16.100.2/api/products)
+* **Web Frontend:** [`http://172.16.100.2/`](https://www.google.com/search?q=http://172.16.100.2/)
+* **Backend API:** [`http://172.16.100.2/api/products`](https://www.google.com/search?q=http://172.16.100.2/api/products)
 * **OpenNebula Sunstone:** `http://<HOST_IP>` (Default user: `oneadmin`)
 
 ### Stress Testing (HPA)
