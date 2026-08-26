@@ -109,6 +109,21 @@ The pipeline automates host bootstrapping, OpenNebula MiniONE deployment, virtua
 
 ## How to Run
 
+>
+> ### ⚠️ WARNING
+> 
+>
+> Please read before executing any scripts in this repository.
+>
+> To guarantee idempotency and ensure a clean environment, the main execution script (`run.sh`) automatically triggers a teardown process (`teardown.sh`) **before** deployment.
+>
+> Running these scripts **will forcefully delete** existing OpenNebula resources that match the **naming conventions** used in this Proof-of-Concept. This includes:
+> * Active Virtual Machines (e.g., K8s master/workers, DB nodes)
+> * VM Templates
+> * Virtual Networks 
+> 
+> **Do not run this automation pipeline in a shared or production OpenNebula environment** without first reviewing `teardown.sh` to ensure it will not conflict with your existing infrastructure.
+
 ### 1. Clone the Repository
 
 ```bash
