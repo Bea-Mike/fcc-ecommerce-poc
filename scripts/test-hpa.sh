@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script generates synthetic traffic to test Horizontal Pod Autoscaling (HPA).
+# This script generates synthetic traffic to test Horizontal Pod Autoscaling (HPA) via Ingress.
 
 set -e
 
@@ -11,11 +11,14 @@ fi
 echo "Current HPA & Pod status before load test:"
 kubectl get hpa,pods -l app=backend
 
-echo "Starting synthetic CPU load test against http://172.16.100.2/api/stress..."
+echo "Dynamically resolving Kubernetes Ingress entrypoint..."
+INGRESS_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+
+echo "Starting synthetic CPU load test against http://$INGRESS_IP/api/stress..."
 echo "Sending 50 concurrent requests for 60 seconds..."
 
-# Run 50 concurrent requests for 60 seconds targeting the CPU stress endpoint
-hey -z 60s -c 50 http://172.16.100.2/api/stress?cycles=5000000 &
+# Run 50 concurrent requests for 60 seconds targeting the CPU stress endpoint via Ingress
+hey -z 60s -c 50 "http://$INGRESS_IP/api/stress?cycles=5000000" &
 
 echo "Monitoring HPA scaling live for 90 seconds..."
 watch -n 2 "kubectl get hpa,pods -l app=backend"
